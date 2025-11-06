@@ -36,24 +36,9 @@ jobs:
       - name: Setup iOS Simulator
         # Use the first installed iOS runtime and the first (i.e. oldest) supported iPhone device.
         run: |
-          RUNTIME=$(xcrun simctl list runtimes --json | jq '.runtimes | map(select(.name | contains("iOS"))) | .[0]')
-          RUNTIME_ID=$(echo $RUNTIME | jq -r '.identifier')
-          echo "Using runtime:" $RUNTIME_ID
-          DEVICE_ID=$(echo $RUNTIME | jq -r '.supportedDeviceTypes | map(select(.productFamily == "iPhone")) | .[0].identifier')
-          echo "Using device:" $DEVICE_ID
-          SIM_ID=$(xcrun simctl create Test-iPhone $DEVICE_ID $RUNTIME_ID)
-          echo "Created simulator:" $SIM_ID
+          RUNTIME_ID=$(xcrun simctl list runtimes | grep iOS | cut -d ' ' -f 7 | tail -1)
+          SIM_ID=$(xcrun simctl create Test-iPhone com.apple.CoreSimulator.SimDeviceType.iPhone-11 $RUNTIME_ID)
           xcrun simctl boot $SIM_ID
-          echo "device=$SIM_ID" >> $GITHUB_ENV
 
       - name: Run unit tests (cross build)
-        run: DINGHY_LOG=trace cargo dinghy --platform auto-ios-aarch64-sim -d ${{ env.device }} test --all-targets --all-features -vvv
-
-      - name: Collect crash logs
-        if: always()
-        run: |
-          echo "=== Simulator System Log (last 50 lines with 'Dinghy') ==="
-          xcrun simctl spawn booted log show --last 1m --predicate 'eventMessage contains "Dinghy"' --style compact || echo "No logs"
-          echo ""
-          echo "=== Crash Reports ==="
-          ls -la ~/Library/Logs/DiagnosticReports/ | grep -i dinghy || echo "No crash reports"
+        run: DINGHY_LOG=trace cargo dinghy --platform auto-ios-aarch64-sim test --all-targets --all-features -vvv
