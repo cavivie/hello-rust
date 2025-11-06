@@ -14,31 +14,33 @@ on:
 
 jobs:
   test-ios:
-    name: Unit tests on iOS simulator
-    runs-on: macos-latest
-
+    name: iOS Simulator
+    runs-on: macos-14
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.88.0
           targets: aarch64-apple-ios-sim
-
-      - name: Install cross-compilation toolchain
-        run: cargo install cargo-dinghy
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-
-      - name: Setup iOS Simulator
+      - name: Install precompiled cargo-dinghy
+        run: |
+          VERSION=0.8.1
+          URL="https://github.com/sonos/dinghy/releases/download/${VERSION}/cargo-dinghy-macos-${VERSION}.tgz"
+          wget -O - $URL | tar -xz --strip-components=1 -C ~/.cargo/bin
+      - name: Check cargo-dinghy version.
+        run: cargo dinghy --version
+      - name: Setup Simulator
         # Use the first installed iOS runtime and the first (i.e. oldest) supported iPhone device.
         run: |
-          RUNTIME_ID=$(xcrun simctl list runtimes | grep iOS | cut -d ' ' -f 7 | tail -1)
-          SIM_ID=$(xcrun simctl create Test-iPhone com.apple.CoreSimulator.SimDeviceType.iPhone-11 $RUNTIME_ID)
+          RUNTIME=$(xcrun simctl list runtimes --json | jq '.runtimes | map(select(.name | contains("iOS"))) | .[0]')
+          RUNTIME_ID=$(echo $RUNTIME | jq -r '.identifier')
+          echo "Using runtime:" $RUNTIME_ID
+          DEVICE_ID=$(echo $RUNTIME | jq -r '.supportedDeviceTypes | map(select(.productFamily == "iPhone")) | .[0].identifier')
+          echo "Using device:" $DEVICE_ID
+          SIM_ID=$(xcrun simctl create Test-iPhone $DEVICE_ID $RUNTIME_ID)
+          echo "Created simulator:" $SIM_ID
           xcrun simctl boot $SIM_ID
-
-      - name: Run unit tests (cross build)
-        run: DINGHY_LOG=trace cargo dinghy --platform auto-ios-aarch64-sim test --all-targets --all-features -vvv
+          echo "device=$SIM_ID" >> $GITHUB_ENV
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo dinghy -p auto-ios-aarch64-sim -d ${{ env.device }} test
